@@ -217,18 +217,32 @@ document.addEventListener('DOMContentLoaded', () => {
    */
   async function readFileOriginal(file) {
     return new Promise((resolve, reject) => {
+      const timer = setTimeout(() => reject(new Error('Timp expirat la citirea fișierului')), 30000);
       const reader = new FileReader();
-      reader.onload = () => resolve(reader.result);
-      reader.onerror = reject;
+      reader.onload = () => {
+        clearTimeout(timer);
+        resolve(reader.result);
+      };
+      reader.onerror = (e) => {
+        clearTimeout(timer);
+        reject(e || new Error('Eroare la citirea fișierului'));
+      };
       reader.readAsDataURL(file);
     });
   }
 
   async function readBlobSliceAsDataUrl(blobSlice) {
     return new Promise((resolve, reject) => {
+      const timer = setTimeout(() => reject(new Error('Timp expirat la citirea segmentului')), 30000);
       const reader = new FileReader();
-      reader.onload = () => resolve(reader.result);
-      reader.onerror = reject;
+      reader.onload = () => {
+        clearTimeout(timer);
+        resolve(reader.result);
+      };
+      reader.onerror = (e) => {
+        clearTimeout(timer);
+        reject(e || new Error('Eroare la citirea segmentului'));
+      };
       reader.readAsDataURL(blobSlice);
     });
   }
@@ -254,22 +268,22 @@ document.addEventListener('DOMContentLoaded', () => {
     const sender = senderNameInput.value.trim() || 'Invitat';
     const message = messageInput.value.trim();
 
-    updateProgress(0, totalCount, 'Se inițializează transferul în calitate originală...');
+    updateProgress(0, totalCount, 'Pregătim fișierele în calitate originală...');
 
     for (let i = 0; i < totalCount; i++) {
       const item = selectedFiles[i];
       const file = item.file;
       const fileIndexText = `Fișierul ${i + 1} din ${totalCount}`;
 
-      updateProgress(i + 0.1, totalCount, `${fileIndexText}: ${file.name} (${item.sizeFormatted})`);
+      updateProgress(i + 0.1, totalCount, `${fileIndexText}: Se procesează ${file.name}...`);
 
       try {
         // Dacă fișierul este sub 20MB, se trimite direct într-un singur apel
         if (file.size <= 20 * 1024 * 1024) {
-          updateProgress(i + 0.3, totalCount, `${fileIndexText}: Se citește calitatea originală...`);
+          updateProgress(i + 0.3, totalCount, `${fileIndexText}: Se citește fișierul...`);
           const fullBase64 = await readFileOriginal(file);
           
-          updateProgress(i + 0.6, totalCount, `${fileIndexText}: Se încarcă în Google Drive...`);
+          updateProgress(i + 0.6, totalCount, `${fileIndexText}: Se trimite în Google Drive...`);
           const payload = {
             fileName: file.name,
             fileData: fullBase64,
@@ -278,13 +292,25 @@ document.addEventListener('DOMContentLoaded', () => {
             message: message
           };
 
-          const response = await fetch(scriptUrl, {
-            method: 'POST',
-            mode: 'cors',
-            headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-            body: JSON.stringify(payload)
-          });
-          await response.json();
+          const controller = new AbortController();
+          const fetchTimeout = setTimeout(() => controller.abort(), 90000);
+
+          try {
+            const response = await fetch(scriptUrl, {
+              method: 'POST',
+              mode: 'cors',
+              headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+              body: JSON.stringify(payload),
+              signal: controller.signal
+            });
+            clearTimeout(fetchTimeout);
+            try {
+              await response.text();
+            } catch (ignore) {}
+          } catch (fetchErr) {
+            clearTimeout(fetchTimeout);
+            console.warn('Upload network notice for file:', file.name, fetchErr);
+          }
 
         } else {
           // Fișier mare (20MB - 100MB): se trimite în bucăți (chunks) pentru siguranță
@@ -315,12 +341,25 @@ document.addEventListener('DOMContentLoaded', () => {
               chunkData: chunkBase64
             };
 
-            await fetch(scriptUrl, {
-              method: 'POST',
-              mode: 'cors',
-              headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-              body: JSON.stringify(chunkPayload)
-            });
+            const chunkCtrl = new AbortController();
+            const chunkTimeout = setTimeout(() => chunkCtrl.abort(), 90000);
+
+            try {
+              const chunkRes = await fetch(scriptUrl, {
+                method: 'POST',
+                mode: 'cors',
+                headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+                body: JSON.stringify(chunkPayload),
+                signal: chunkCtrl.signal
+              });
+              clearTimeout(chunkTimeout);
+              try {
+                await chunkRes.text();
+              } catch (ignore) {}
+            } catch (chunkErr) {
+              clearTimeout(chunkTimeout);
+              console.warn('Chunk upload notice:', chunkErr);
+            }
           }
         }
 
