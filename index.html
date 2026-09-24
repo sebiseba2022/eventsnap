@@ -1,0 +1,324 @@
+<!DOCTYPE html>
+<html lang="ro">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Amintiri de la Botez • Încarcă Pozele Tale</title>
+  <meta name="description" content="Scanează codul de pe masă și încarcă fotografiile tale de la botez direct în albumul Google Drive!">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,600;0,700;1,600&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <!-- Header / Navigation Bar -->
+  <header class="app-header">
+    <div class="header-container">
+      <div class="brand">
+        <span class="brand-icon">👼</span>
+        <div class="brand-text">
+          <span class="brand-title" id="navTitle">Botezul Nostru</span>
+          <span class="brand-tag">Amintiri de la mese</span>
+        </div>
+      </div>
+      <div class="header-actions">
+        <button id="btnOpenQrModal" class="btn-icon" title="Cod QR pentru mese" aria-label="Cod QR pentru mese">
+          <span class="icon">📱</span>
+          <span class="btn-text-desktop">Cod QR Mese</span>
+        </button>
+        <a id="btnNavDrive" href="https://drive.google.com/drive/folders/1wAaj_D6F1dVWnf1xsFvbJwD7Meg9NikR?usp=drive_link" target="_blank" rel="noopener noreferrer" class="btn-icon" title="Deschide Google Drive">
+          <span class="icon">📁</span>
+          <span class="btn-text-desktop">Album Drive</span>
+        </a>
+        <button id="btnOpenSettings" class="btn-icon" title="Setări Google Drive" aria-label="Setări">
+          <span class="icon">⚙️</span>
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <!-- Main Container -->
+  <main class="main-content">
+    <div class="app-card">
+      
+      <!-- Banner Hero -->
+      <section class="hero-section">
+        <div class="celebration-badge">
+          <span>🕊️ Zi de Mare Sărbătoare</span>
+        </div>
+        <h1 class="event-heading" id="heroTitle">Botezul Nostru</h1>
+        <p class="hero-subtitle" id="heroSubtitle">
+          Fiecare clipă surprinsă de tine este o amintire de neprețuit. Apasă mai jos și trimite-ne pozele și filmulețele făcute astăzi!
+        </p>
+      </section>
+
+      <!-- Connection Alert Notice (Shown if Script URL not yet set) -->
+      <div id="setupNotice" class="setup-alert" style="display: none;">
+        <div class="alert-icon">💡</div>
+        <div class="alert-content">
+          <strong>Notă pentru organizator:</strong> 
+          Trebuie să activezi scriptul Google Drive pentru upload automat.
+          <button id="btnQuickSetup" class="link-button">Apasă aici pentru instrucțiuni (1 minut)</button>
+        </div>
+      </div>
+
+      <!-- Upload Form Screen -->
+      <div id="uploadView">
+        
+        <!-- Big Camera / Gallery Trigger Button -->
+        <div class="picker-zone">
+          <input type="file" id="fileInput" multiple accept="image/*,video/*" class="sr-only">
+          <button type="button" id="btnSelectFiles" class="btn-massive-upload">
+            <div class="pulse-ring"></div>
+            <div class="btn-icon-wrapper">
+              <span class="big-icon">📸</span>
+            </div>
+            <div class="btn-content">
+              <span class="btn-primary-label">Alege Poze din Telefon</span>
+              <span class="btn-sub-label">Apasă aici pentru a deschide galeria sau camera</span>
+            </div>
+          </button>
+          
+          <p class="drag-hint">Poți selecta mai multe fotografii simultan</p>
+        </div>
+
+        <!-- Selected Files Tray (Visible when files are picked) -->
+        <div id="selectedTray" class="selected-tray" style="display: none;">
+          <div class="tray-header">
+            <div class="tray-title-group">
+              <span class="tray-badge" id="selectedCountBadge">0 poze</span>
+              <span class="tray-title">gata de încărcare</span>
+            </div>
+            <button type="button" id="btnAddMoreFiles" class="btn-secondary-pill">
+              <span>+ Adaugă mai multe</span>
+            </button>
+          </div>
+
+          <!-- Thumbnails Grid -->
+          <div class="preview-grid" id="previewGrid"></div>
+
+          <!-- Guest Info Box -->
+          <div class="guest-info-card">
+            <div class="input-row">
+              <label for="senderNameInput" class="input-label">
+                <span class="label-icon">✍️</span> Numele tău sau numărul mesei (opțional):
+              </label>
+              <input type="text" id="senderNameInput" class="custom-input" placeholder="ex: Nașii, Bunica Maria, Masa 4...">
+            </div>
+            
+            <div class="input-row">
+              <label for="messageInput" class="input-label">
+                <span class="label-icon">💌</span> O urare pentru bebe (opțional):
+              </label>
+              <textarea id="messageInput" rows="2" class="custom-textarea" placeholder="Scrie o scurtă urare din inimă..."></textarea>
+            </div>
+          </div>
+
+          <!-- Primary Submit Button -->
+          <div class="action-zone">
+            <button type="button" id="btnUploadSubmit" class="btn-submit">
+              <span class="btn-submit-icon">✨</span>
+              <span class="btn-submit-text" id="btnSubmitText">Trimite Pozele în Album</span>
+            </button>
+            <button type="button" id="btnClearSelection" class="btn-link-cancel">Anulează selecția</button>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- Uploading / Progress Screen -->
+      <div id="progressView" class="progress-view" style="display: none;">
+        <div class="progress-card">
+          <div class="spinner-wrapper">
+            <div class="loading-spinner"></div>
+            <span class="spinner-percent" id="progressPercent">0%</span>
+          </div>
+          <h2 class="progress-title" id="progressStatusTitle">Se pregătesc fotografiile...</h2>
+          <p class="progress-detail" id="progressStatusDetail">Optimizăm pozele pentru încărcare rapidă</p>
+          
+          <div class="progress-bar-container">
+            <div class="progress-bar-fill" id="progressBarFill" style="width: 0%;"></div>
+          </div>
+          
+          <div class="progress-counter" id="progressCounter">0 din 0 poze trimise</div>
+        </div>
+      </div>
+
+      <!-- Success Screen -->
+      <div id="successView" class="success-view" style="display: none;">
+        <div class="success-card">
+          <div class="success-check-icon">✓</div>
+          <h2 class="success-title">Vă mulțumim din suflet! ❤️</h2>
+          <p class="success-subtitle" id="successMessage">
+            Fotografiile tale au fost trimise cu succes în albumul botezului.
+          </p>
+
+          <div class="success-actions">
+            <a id="btnSuccessDriveLink" href="https://drive.google.com/drive/folders/1wAaj_D6F1dVWnf1xsFvbJwD7Meg9NikR?usp=drive_link" target="_blank" rel="noopener noreferrer" class="btn-drive-direct">
+              <span class="btn-icon">📁</span>
+              <span>Deschide Albumul pe Google Drive</span>
+            </a>
+            
+            <button type="button" id="btnUploadMore" class="btn-reset">
+              <span class="btn-icon">📸</span>
+              <span>Trimite și alte poze</span>
+            </button>
+          </div>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- Friendly Instructions Card for 40+ Guests -->
+    <section class="instructions-card">
+      <h3 class="instructions-title">Cum funcționează? (3 pași simpli)</h3>
+      <div class="steps-grid">
+        <div class="step-item">
+          <div class="step-num">1</div>
+          <div class="step-text">
+            <strong>Apasă pe butonul mare</strong> și alege pozele făcute astăzi din galeria telefonului tău.
+          </div>
+        </div>
+        <div class="step-item">
+          <div class="step-num">2</div>
+          <div class="step-text">
+            <strong>Treci numele tău</strong> (opțional) ca părinții să știe de la cine sunt pozele frumoase.
+          </div>
+        </div>
+        <div class="step-item">
+          <div class="step-num">3</div>
+          <div class="step-text">
+            <strong>Apasă „Trimite”</strong> și pozele ajung instantaneu în folderul comun Google Drive!
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Footer -->
+    <footer class="app-footer">
+      <p>Album foto realizat cu dragoste pentru botez.</p>
+      <div class="footer-links">
+        <a href="https://drive.google.com/drive/folders/1wAaj_D6F1dVWnf1xsFvbJwD7Meg9NikR?usp=drive_link" target="_blank" rel="noopener">Acces Folder Google Drive</a>
+        <span>•</span>
+        <button id="btnFooterQr">Generează Cartonașe Mese</button>
+      </div>
+    </footer>
+  </main>
+
+  <!-- Modal: QR Code for Restaurant Tables (Print Ready) -->
+  <div id="qrModal" class="modal-overlay" style="display: none;">
+    <div class="modal-container">
+      <div class="modal-header">
+        <h3 class="modal-title">Cartonaș QR pentru Mese</h3>
+        <button id="btnCloseQrModal" class="modal-close" aria-label="Închide">&times;</button>
+      </div>
+      <div class="modal-body">
+        
+        <!-- Printable Table Tent Card -->
+        <div id="printableCard" class="table-card-preview">
+          <div class="card-ornament">🕊️</div>
+          <h2 class="card-event-name" id="cardEventName">Botezul Nostru</h2>
+          <p class="card-intro">Ajută-ne să păstrăm vie fiecare clipă!</p>
+          
+          <div class="qr-frame">
+            <div id="qrcodeContainer"></div>
+          </div>
+          
+          <div class="card-instruction">
+            <span class="scan-icon">📷</span>
+            <strong>Scanează codul cu camera telefonului</strong>
+            <span>pentru a încărca pozele și video-urile tale în album!</span>
+          </div>
+
+          <div class="card-footer-quote">
+            „Fiecare fotografie este o amintire pentru toată viața”
+          </div>
+        </div>
+
+        <div class="modal-controls">
+          <button id="btnPrintCard" class="btn-print">
+            <span class="icon">🖨️</span>
+            <span>Printează Cartonașul de Masă</span>
+          </button>
+          <button id="btnCopyPageUrl" class="btn-outline">
+            <span class="icon">📋</span>
+            <span>Copiază Linkul</span>
+          </button>
+        </div>
+
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal: Google Drive Setup & Settings -->
+  <div id="settingsModal" class="modal-overlay" style="display: none;">
+    <div class="modal-container settings-modal">
+      <div class="modal-header">
+        <h3 class="modal-title">⚙️ Configurare Google Drive</h3>
+        <button id="btnCloseSettingsModal" class="modal-close" aria-label="Închide">&times;</button>
+      </div>
+      <div class="modal-body">
+        <p class="settings-help">
+          Pentru ca invitații să poată uploada direct în folderul tău Google Drive fără să aibă nevoie de cont sau logare, aplicația folosește un script Google gratuit (Google Apps Script).
+        </p>
+
+        <div class="settings-form">
+          <div class="setting-field">
+            <label class="setting-label" for="settingScriptUrl">
+              Adresă Web App Google Apps Script (URL):
+            </label>
+            <input type="url" id="settingScriptUrl" class="custom-input" placeholder="https://script.google.com/macros/s/.../exec">
+            <span class="field-hint">Această adresă o primești la implementarea scriptului în contul tău Google.</span>
+          </div>
+
+          <div class="setting-field">
+            <label class="setting-label" for="settingDriveUrl">
+              Link Folder Google Drive:
+            </label>
+            <input type="url" id="settingDriveUrl" class="custom-input" value="https://drive.google.com/drive/folders/1wAaj_D6F1dVWnf1xsFvbJwD7Meg9NikR?usp=drive_link">
+          </div>
+
+          <div class="setting-field">
+            <label class="setting-label" for="settingEventTitle">
+              Nume Eveniment (titlu pe cartonaș și site):
+            </label>
+            <input type="text" id="settingEventTitle" class="custom-input" value="Botezul Nostru">
+          </div>
+
+          <div class="settings-buttons">
+            <button type="button" id="btnTestScript" class="btn-test">
+              <span>🔌 Testează Conexiunea</span>
+            </button>
+            <button type="button" id="btnSaveSettings" class="btn-save">
+              <span>💾 Salvează Setările</span>
+            </button>
+          </div>
+
+          <div id="testResultBox" class="test-result-box" style="display: none;"></div>
+
+          <hr class="settings-divider">
+
+          <div class="instructions-accordion">
+            <h4>📖 Ghid Rapid: Cum obții URL-ul Web App (1 minut)</h4>
+            <ol class="setup-steps-list">
+              <li>Deschide <a href="https://script.google.com/home/start" target="_blank" rel="noopener">Google Apps Script</a> și apasă pe <strong>„Proiect nou”</strong>.</li>
+              <li>Copiază codul din fișierul <button type="button" id="btnCopyScriptCode" class="link-inline">📋 Copiază Codul Scriptului</button> și lipește-l acolo.</li>
+              <li>Apasă sus în dreapta pe <strong>Implementare (Deploy)</strong> &rarr; <strong>Implementare nouă (New deployment)</strong>.</li>
+              <li>La tip selectează <strong>Aplicație web (Web app)</strong>.</li>
+              <li>La <em>„Cine are acces” (Who has access)</em> alege <strong>„Oricine” (Anyone)</strong>.</li>
+              <li>Apasă Implementare, autorizează permisiunile și copiază URL-ul primit aici!</li>
+            </ol>
+          </div>
+
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Scripts -->
+  <script src="qrcode.min.js"></script>
+  <script src="confetti.min.js"></script>
+  <script src="config.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
