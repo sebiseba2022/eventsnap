@@ -247,6 +247,12 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
+  function extractPureBase64(dataUrl) {
+    if (!dataUrl) return '';
+    const commaIdx = dataUrl.indexOf(',');
+    return commaIdx !== -1 ? dataUrl.substring(commaIdx + 1) : dataUrl;
+  }
+
   // ---------------- Upload Submission (Up to 100MB Original Quality) ----------------
   btnUploadSubmit.addEventListener('click', async () => {
     if (selectedFiles.length === 0) return;
@@ -278,22 +284,23 @@ document.addEventListener('DOMContentLoaded', () => {
       updateProgress(i + 0.1, totalCount, `${fileIndexText}: Se procesează ${file.name}...`);
 
       try {
-        // Dacă fișierul este sub 20MB, se trimite direct într-un singur apel
-        if (file.size <= 20 * 1024 * 1024) {
+        // Dacă fișierul este sub 35MB (toate pozele și marea majoritate a clipurilor video)
+        if (file.size <= 35 * 1024 * 1024) {
           updateProgress(i + 0.3, totalCount, `${fileIndexText}: Se citește fișierul...`);
           const fullBase64 = await readFileOriginal(file);
+          const cleanBase64 = extractPureBase64(fullBase64);
           
           updateProgress(i + 0.6, totalCount, `${fileIndexText}: Se trimite în Google Drive...`);
           const payload = {
             fileName: file.name,
-            fileData: fullBase64,
+            fileData: cleanBase64,
             mimeType: file.type || 'application/octet-stream',
             sender: sender,
             message: message
           };
 
           const controller = new AbortController();
-          const fetchTimeout = setTimeout(() => controller.abort(), 90000);
+          const fetchTimeout = setTimeout(() => controller.abort(), 120000);
 
           try {
             const response = await fetch(scriptUrl, {
@@ -305,7 +312,8 @@ document.addEventListener('DOMContentLoaded', () => {
             });
             clearTimeout(fetchTimeout);
             try {
-              await response.text();
+              const resText = await response.text();
+              console.log('Upload result for', file.name, resText);
             } catch (ignore) {}
           } catch (fetchErr) {
             clearTimeout(fetchTimeout);
@@ -313,7 +321,7 @@ document.addEventListener('DOMContentLoaded', () => {
           }
 
         } else {
-          // Fișier mare (20MB - 100MB): se trimite în bucăți (chunks) pentru siguranță
+          // Fișier mare (35MB - 100MB): se trimite în bucăți (chunks)
           const totalChunks = Math.ceil(file.size / CHUNK_SIZE_BYTES);
           const uploadId = `up_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
 
@@ -322,6 +330,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const end = Math.min(start + CHUNK_SIZE_BYTES, file.size);
             const slice = file.slice(start, end);
             const chunkBase64 = await readBlobSliceAsDataUrl(slice);
+            const cleanChunk = extractPureBase64(chunkBase64);
 
             const chunkFraction = (chunkIdx + 1) / totalChunks;
             updateProgress(
@@ -338,11 +347,12 @@ document.addEventListener('DOMContentLoaded', () => {
               mimeType: file.type || 'application/octet-stream',
               sender: sender,
               message: message,
-              chunkData: chunkBase64
+              fileData: cleanChunk,
+              chunkData: cleanChunk
             };
 
             const chunkCtrl = new AbortController();
-            const chunkTimeout = setTimeout(() => chunkCtrl.abort(), 90000);
+            const chunkTimeout = setTimeout(() => chunkCtrl.abort(), 120000);
 
             try {
               const chunkRes = await fetch(scriptUrl, {
@@ -368,7 +378,7 @@ document.addEventListener('DOMContentLoaded', () => {
       }
 
       completedCount++;
-      updateProgress(completedCount, totalCount, `${file.name} a fost încărcat cu succes!`);
+      updateProgress(completedCount, totalCount, `${file.name} a fost încărcat!`);
     }
 
     // Success Screen

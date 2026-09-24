@@ -45,7 +45,7 @@ function doPost(e) {
     const finalFileName = `${timestamp}_${sender}_${originalName}`;
 
     // Decodificare base64 exactă, fără re-compresie
-    const base64Data = data.fileData.replace(/^data:([A-Za-z-+\/]+);base64,/, '');
+    const base64Data = getCleanBase64(data.fileData);
     const decodedBytes = Utilities.base64Decode(base64Data);
     const mimeType = data.mimeType || "application/octet-stream";
     const blob = Utilities.newBlob(decodedBytes, mimeType, finalFileName);
@@ -86,7 +86,7 @@ function handleChunkedUpload(data, folder) {
   }
 
   // Salvare bucată
-  const base64Data = data.chunkData.replace(/^data:([A-Za-z-+\/]+);base64,/, '');
+  const base64Data = getCleanBase64(data.fileData || data.chunkData);
   const decodedBytes = Utilities.base64Decode(base64Data);
   const chunkFileName = `part_${String(data.chunkIndex).padStart(4, '0')}`;
   tempFolder.createFile(chunkFileName, decodedBytes);
@@ -136,4 +136,10 @@ function handleChunkedUpload(data, folder) {
 
 function cleanString(str) {
   return str.replace(/[^a-zA-Z0-9_\-\s]/g, '').trim().substring(0, 30).replace(/\s+/g, '_');
+}
+
+function getCleanBase64(str) {
+  if (!str) return '';
+  var comma = str.indexOf(',');
+  return comma !== -1 ? str.substring(comma + 1) : str;
 }
