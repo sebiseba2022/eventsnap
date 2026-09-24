@@ -290,7 +290,7 @@ document.addEventListener('DOMContentLoaded', () => {
           const fullBase64 = await readFileOriginal(file);
           const cleanBase64 = extractPureBase64(fullBase64);
           
-          updateProgress(i + 0.6, totalCount, `${fileIndexText}: Se trimite în Google Drive...`);
+          updateProgress(i + 0.5, totalCount, `${fileIndexText}: Se trimite în Google Drive (${item.sizeFormatted})...\nVă rugăm să nu închideți ecranul.`);
           const payload = {
             fileName: file.name,
             fileData: cleanBase64,
@@ -300,7 +300,7 @@ document.addEventListener('DOMContentLoaded', () => {
           };
 
           const controller = new AbortController();
-          const fetchTimeout = setTimeout(() => controller.abort(), 120000);
+          const fetchTimeout = setTimeout(() => controller.abort(), 300000); // 5 minute timeout
 
           try {
             const response = await fetch(scriptUrl, {
@@ -311,12 +311,25 @@ document.addEventListener('DOMContentLoaded', () => {
               signal: controller.signal
             });
             clearTimeout(fetchTimeout);
+            
+            const resText = await response.text();
+            console.log('Upload result for', file.name, resText);
+
             try {
-              const resText = await response.text();
-              console.log('Upload result for', file.name, resText);
-            } catch (ignore) {}
+              const resJson = JSON.parse(resText);
+              if (resJson.status === 'success') {
+                completedCount++;
+              } else {
+                alert(`⚠️ Fișierul „${file.name}” (${item.sizeFormatted}) nu a putut fi salvat de Google Drive:\n\n${resJson.message || 'Eroare necunoscută'}`);
+              }
+            } catch (parseErr) {
+              // Dacă serverul nu a returnat JSON dar cererea a trecut
+              completedCount++;
+            }
+
           } catch (fetchErr) {
             clearTimeout(fetchTimeout);
+            alert(`⚠️ Conexiunea a fost întreruptă la încărcarea fișierului „${file.name}” (${item.sizeFormatted}).\n\nDetalii: ${fetchErr.message || 'Timeout rețea'}`);
             console.warn('Upload network notice for file:', file.name, fetchErr);
           }
 
