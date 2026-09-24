@@ -1,9 +1,12 @@
 /**
  * EventSnap Botez - Application Logic
- * Mobile-first photo upload & QR card generator
+ * Mobile-first photo & video upload (Original Quality, max 100MB / file)
  */
 
 document.addEventListener('DOMContentLoaded', () => {
+  const MAX_FILE_SIZE_BYTES = 100 * 1024 * 1024; // 100 MB max per file
+  const CHUNK_SIZE_BYTES = 15 * 1024 * 1024;    // 15 MB chunks for large files (>20MB)
+
   // Elements
   const fileInput = document.getElementById('fileInput');
   const btnSelectFiles = document.getElementById('btnSelectFiles');
@@ -64,7 +67,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const cardEventName = document.getElementById('cardEventName');
 
   // State
-  let selectedFiles = []; // Array of { id, file, previewUrl, sizeFormatted }
+  let selectedFiles = []; // Array of { id, file, previewUrl, sizeFormatted, isImage, isVideo }
   let qrCodeInstance = null;
 
   // Initialize UI with Config
@@ -95,7 +98,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   applyConfig();
 
-  // ---------------- File Picking ----------------
+  // ---------------- File Picking with 100MB Limit & Original Quality ----------------
   btnSelectFiles.addEventListener('click', () => fileInput.click());
   btnAddMoreFiles.addEventListener('click', () => fileInput.click());
 
@@ -103,20 +106,35 @@ document.addEventListener('DOMContentLoaded', () => {
     const newFiles = Array.from(e.target.files);
     if (!newFiles.length) return;
 
+    let rejectedFiles = [];
+
     newFiles.forEach((file) => {
+      // Validare dimensiune maximă 100MB
+      if (file.size > MAX_FILE_SIZE_BYTES) {
+        rejectedFiles.push(`${file.name} (${(file.size / (1024 * 1024)).toFixed(1)} MB)`);
+        return;
+      }
+
       const fileId = `${file.name}-${file.size}-${Date.now()}-${Math.random()}`;
+      const isImg = file.type.startsWith('image/') || /\.(jpe?g|png|gif|webp|heic|heif|bmp|tiff)$/i.test(file.name);
+      const isVid = file.type.startsWith('video/') || /\.(mp4|mov|avi|wmv|mkv|webm|m4v|3gp)$/i.test(file.name);
+      
       const previewUrl = URL.createObjectURL(file);
+
       selectedFiles.push({
         id: fileId,
         file: file,
         previewUrl: previewUrl,
         sizeFormatted: formatFileSize(file.size),
-        isImage: file.type.startsWith('image/'),
-        isVideo: file.type.startsWith('video/')
+        isImage: isImg,
+        isVideo: isVid
       });
     });
 
-    // Reset input value so same files can be re-selected if removed
+    if (rejectedFiles.length > 0) {
+      alert(`⚠️ Următoarele fișiere depășesc limita maximă de 100 MB și nu au fost adăugate:\n\n• ${rejectedFiles.join('\n• ')}\n\nVă rugăm să alegeți fișiere de până la 100 MB.`);
+    }
+
     fileInput.value = '';
     renderSelectedTray();
   });
@@ -134,8 +152,9 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     selectedTray.style.display = 'block';
-    selectedCountBadge.textContent = `${selectedFiles.length} ${selectedFiles.length === 1 ? 'poză' : 'poze'}`;
-    btnSubmitText.textContent = `Trimite ${selectedFiles.length} ${selectedFiles.length === 1 ? 'Poză' : 'Poze'} în Album`;
+    const count = selectedFiles.length;
+    selectedCountBadge.textContent = `${count} ${count === 1 ? 'fișier' : 'fișiere'}`;
+    btnSubmitText.textContent = `Trimite ${count} ${count === 1 ? 'Fișier' : 'Fișiere'} în Album`;
 
     previewGrid.innerHTML = '';
     selectedFiles.forEach((item, index) => {
@@ -149,18 +168,18 @@ document.addEventListener('DOMContentLoaded', () => {
         img.loading = 'lazy';
         card.appendChild(img);
       } else {
-        const videoIcon = document.createElement('div');
-        videoIcon.style.cssText = 'display:flex;align-items:center;justify-content:center;height:100%;font-size:28px;background:#1e293b;';
-        videoIcon.textContent = '🎥';
-        card.appendChild(videoIcon);
+        const videoPreview = document.createElement('div');
+        videoPreview.style.cssText = 'display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;font-size:24px;background:#1e293b;color:#f8fafc;padding:4px;text-align:center;';
+        videoPreview.innerHTML = '<span style="font-size:30px;">🎬</span><span style="font-size:10px;margin-top:2px;">VIDEO</span>';
+        card.appendChild(videoPreview);
       }
 
       // Remove button
       const removeBtn = document.createElement('button');
       removeBtn.className = 'btn-remove-preview';
       removeBtn.innerHTML = '&times;';
-      removeBtn.title = 'Elimină poza';
-      removeBtn.setAttribute('aria-label', 'Elimină poza');
+      removeBtn.title = 'Elimină fișierul';
+      removeBtn.setAttribute('aria-label', 'Elimină fișierul');
       removeBtn.addEventListener('click', (e) => {
         e.stopPropagation();
         removeFileAtIndex(index);
@@ -191,93 +210,41 @@ document.addEventListener('DOMContentLoaded', () => {
     renderSelectedTray();
   });
 
-  // ---------------- Image Optimization & Compression ----------------
+  // ---------------- Exact Original Binary Read (NO Compression / NO Alteration) ----------------
   /**
-   * Resizes large smartphone camera photos to max 2048px and compresses as JPEG.
-   * This reduces 15MB-30MB files down to ~800KB-1.2MB with near-zero visible loss,
-   * guaranteeing instantaneous uploads even on mobile 4G at wedding/event venues.
+   * Reads raw bytes directly without ANY canvas processing, resizing or quality degradation.
+   * Exactly what the user captured on their camera/phone is uploaded!
    */
-  async function optimizeFileForUpload(file) {
-    if (!file.type.startsWith('image/')) {
-      // For video or other files, read directly
-      return new Promise((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onload = () => resolve({
-          base64: reader.result,
-          mimeType: file.type || 'application/octet-stream',
-          fileName: file.name
-        });
-        reader.onerror = reject;
-        reader.readAsDataURL(file);
-      });
-    }
-
-    return new Promise((resolve) => {
+  async function readFileOriginal(file) {
+    return new Promise((resolve, reject) => {
       const reader = new FileReader();
-      reader.onload = (e) => {
-        const img = new Image();
-        img.onload = () => {
-          const maxDim = window.APP_CONFIG.maxImageDimension || 2048;
-          let width = img.width;
-          let height = img.height;
-
-          if (width > maxDim || height > maxDim) {
-            if (width > height) {
-              height = Math.round((height * maxDim) / width);
-              width = maxDim;
-            } else {
-              width = Math.round((width * maxDim) / height);
-              height = maxDim;
-            }
-          }
-
-          const canvas = document.createElement('canvas');
-          canvas.width = width;
-          canvas.height = height;
-          const ctx = canvas.getContext('2d');
-          ctx.drawImage(img, 0, 0, width, height);
-
-          const quality = window.APP_CONFIG.imageQuality || 0.84;
-          const compressedDataUrl = canvas.toDataURL('image/jpeg', quality);
-
-          // Change extension to .jpg if needed
-          let cleanName = file.name;
-          if (!cleanName.toLowerCase().endsWith('.jpg') && !cleanName.toLowerCase().endsWith('.jpeg')) {
-            cleanName = cleanName.replace(/\.[^/.]+$/, '') + '.jpg';
-          }
-
-          resolve({
-            base64: compressedDataUrl,
-            mimeType: 'image/jpeg',
-            fileName: cleanName
-          });
-        };
-        img.onerror = () => {
-          // Fallback to raw base64 if canvas decode fails
-          resolve({
-            base64: e.target.result,
-            mimeType: file.type,
-            fileName: file.name
-          });
-        };
-        img.src = e.target.result;
-      };
+      reader.onload = () => resolve(reader.result);
+      reader.onerror = reject;
       reader.readAsDataURL(file);
     });
   }
 
-  // ---------------- Upload Submission ----------------
+  async function readBlobSliceAsDataUrl(blobSlice) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result);
+      reader.onerror = reject;
+      reader.readAsDataURL(blobSlice);
+    });
+  }
+
+  // ---------------- Upload Submission (Up to 100MB Original Quality) ----------------
   btnUploadSubmit.addEventListener('click', async () => {
     if (selectedFiles.length === 0) return;
 
     const scriptUrl = window.APP_CONFIG.scriptWebAppUrl;
     if (!scriptUrl) {
-      alert('Vă rugăm să configurați URL-ul Google Apps Script în setări (rotița din dreapta-sus) pentru a trimite pozele direct în Google Drive.\n\nÎntre timp, puteți folosi link-ul Google Drive pentru upload manual.');
+      alert('Vă rugăm să configurați URL-ul Google Apps Script în setări (rotița din dreapta-sus).');
       openSettingsModal();
       return;
     }
 
-    // Switch views to progress
+    // Switch views
     uploadView.style.display = 'none';
     progressView.style.display = 'block';
     successView.style.display = 'none';
@@ -287,77 +254,97 @@ document.addEventListener('DOMContentLoaded', () => {
     const sender = senderNameInput.value.trim() || 'Invitat';
     const message = messageInput.value.trim();
 
-    updateProgress(0, totalCount, 'Se pregătesc fișierele...');
+    updateProgress(0, totalCount, 'Se inițializează transferul în calitate originală...');
 
     for (let i = 0; i < totalCount; i++) {
-      const current = selectedFiles[i];
-      updateProgress(i, totalCount, `Se optimizează poza ${i + 1} din ${totalCount}...`);
+      const item = selectedFiles[i];
+      const file = item.file;
+      const fileIndexText = `Fișierul ${i + 1} din ${totalCount}`;
+
+      updateProgress(i + 0.1, totalCount, `${fileIndexText}: ${file.name} (${item.sizeFormatted})`);
 
       try {
-        const optimized = await optimizeFileForUpload(current.file);
-        updateProgress(i + 0.5, totalCount, `Se trimite în Google Drive (${i + 1}/${totalCount})...`);
+        // Dacă fișierul este sub 20MB, se trimite direct într-un singur apel
+        if (file.size <= 20 * 1024 * 1024) {
+          updateProgress(i + 0.3, totalCount, `${fileIndexText}: Se citește calitatea originală...`);
+          const fullBase64 = await readFileOriginal(file);
+          
+          updateProgress(i + 0.6, totalCount, `${fileIndexText}: Se încarcă în Google Drive...`);
+          const payload = {
+            fileName: file.name,
+            fileData: fullBase64,
+            mimeType: file.type || 'application/octet-stream',
+            sender: sender,
+            message: message
+          };
 
-        // Send payload to Google Apps Script Web App
-        const payload = {
-          fileName: optimized.fileName,
-          fileData: optimized.base64,
-          mimeType: optimized.mimeType,
-          sender: sender,
-          message: message
-        };
+          const response = await fetch(scriptUrl, {
+            method: 'POST',
+            mode: 'cors',
+            headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+            body: JSON.stringify(payload)
+          });
+          await response.json();
 
-        const response = await fetch(scriptUrl, {
-          method: 'POST',
-          mode: 'cors',
-          headers: {
-            'Content-Type': 'text/plain;charset=utf-8' // avoids preflight CORS restrictions on GAS
-          },
-          body: JSON.stringify(payload)
-        });
+        } else {
+          // Fișier mare (20MB - 100MB): se trimite în bucăți (chunks) pentru siguranță
+          const totalChunks = Math.ceil(file.size / CHUNK_SIZE_BYTES);
+          const uploadId = `up_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
 
-        const result = await response.json();
-        if (result.status !== 'success') {
-          console.warn('Upload warning for file:', current.file.name, result);
+          for (let chunkIdx = 0; chunkIdx < totalChunks; chunkIdx++) {
+            const start = chunkIdx * CHUNK_SIZE_BYTES;
+            const end = Math.min(start + CHUNK_SIZE_BYTES, file.size);
+            const slice = file.slice(start, end);
+            const chunkBase64 = await readBlobSliceAsDataUrl(slice);
+
+            const chunkFraction = (chunkIdx + 1) / totalChunks;
+            updateProgress(
+              i + (0.1 + 0.8 * chunkFraction),
+              totalCount,
+              `${fileIndexText}: Partea ${chunkIdx + 1} din ${totalChunks} (${Math.round(chunkFraction * 100)}%)...`
+            );
+
+            const chunkPayload = {
+              uploadId: uploadId,
+              chunkIndex: chunkIdx,
+              totalChunks: totalChunks,
+              fileName: file.name,
+              mimeType: file.type || 'application/octet-stream',
+              sender: sender,
+              message: message,
+              chunkData: chunkBase64
+            };
+
+            await fetch(scriptUrl, {
+              method: 'POST',
+              mode: 'cors',
+              headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+              body: JSON.stringify(chunkPayload)
+            });
+          }
         }
 
       } catch (err) {
-        console.error('Eroare la uploadul fișierului:', current.file.name, err);
-        // Continue with the remaining files even if one encounters a hiccup
+        console.error('Eroare la upload pentru:', file.name, err);
       }
 
       completedCount++;
-      updateProgress(completedCount, totalCount, `Poza ${completedCount} din ${totalCount} a fost încărcată!`);
+      updateProgress(completedCount, totalCount, `${file.name} a fost încărcat cu succes!`);
     }
 
-    // Finished!
+    // Success Screen
     setTimeout(() => {
       progressView.style.display = 'none';
       successView.style.display = 'block';
 
-      // Confetti burst!
       if (window.confetti) {
-        window.confetti({
-          particleCount: 120,
-          spread: 80,
-          origin: { y: 0.6 }
-        });
+        window.confetti({ particleCount: 120, spread: 80, origin: { y: 0.6 } });
         setTimeout(() => {
-          window.confetti({
-            particleCount: 60,
-            angle: 60,
-            spread: 55,
-            origin: { x: 0 }
-          });
-          window.confetti({
-            particleCount: 60,
-            angle: 120,
-            spread: 55,
-            origin: { x: 1 }
-          });
+          window.confetti({ particleCount: 60, angle: 60, spread: 55, origin: { x: 0 } });
+          window.confetti({ particleCount: 60, angle: 120, spread: 55, origin: { x: 1 } });
         }, 400);
       }
 
-      // Cleanup
       selectedFiles.forEach(item => URL.revokeObjectURL(item.previewUrl));
       selectedFiles = [];
       renderSelectedTray();
@@ -370,7 +357,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const percent = Math.min(100, Math.round((current / total) * 100));
     progressBarFill.style.width = `${percent}%`;
     progressPercent.textContent = `${percent}%`;
-    progressCounter.textContent = `${Math.floor(current)} din ${total} poze`;
+    progressCounter.textContent = `${Math.floor(current)} din ${total} fișiere`;
     progressStatusDetail.textContent = detailText;
   }
 
@@ -429,7 +416,7 @@ document.addEventListener('DOMContentLoaded', () => {
     settingsModal.style.display = 'flex';
     settingScriptUrl.value = window.APP_CONFIG.scriptWebAppUrl || '';
     settingDriveUrl.value = window.APP_CONFIG.driveFolderUrl || '';
-    settingEventTitle.value = window.APP_CONFIG.eventTitle || 'Botezul Nostru';
+    settingEventTitle.value = window.APP_CONFIG.eventTitle || 'Botez Miraia';
     testResultBox.style.display = 'none';
   }
 
@@ -448,7 +435,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const updated = {
       scriptWebAppUrl: settingScriptUrl.value.trim(),
       driveFolderUrl: settingDriveUrl.value.trim(),
-      eventTitle: settingEventTitle.value.trim() || 'Botezul Nostru'
+      eventTitle: settingEventTitle.value.trim() || 'Botez Miraia'
     };
     window.saveAppConfig(updated);
     applyConfig();
@@ -488,7 +475,7 @@ document.addEventListener('DOMContentLoaded', () => {
       }
     } catch (err) {
       testResultBox.className = 'test-result-box test-error';
-      testResultBox.innerHTML = `⚠️ Nu s-a putut conecta la URL. Asigurați-vă că la implementare ați selectat <strong>„Cine are acces: Oricine”</strong> (Who has access: Anyone). Detalii: ${err.message}`;
+      testResultBox.innerHTML = `⚠️ Nu s-a putut conecta la URL. Asigurați-vă că la implementare ați selectat <strong>„Cine are acces: Oricine”</strong>. Detalii: ${err.message}`;
     }
   });
 
